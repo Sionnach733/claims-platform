@@ -24,7 +24,7 @@ public class AwsConfig {
         SqsClientBuilder builder = SqsClient.builder()
                 .region(Region.of(aws.region()))
                 .httpClient(UrlConnectionHttpClient.create());
-        if (aws.endpoint() != null) {
+        if (aws.hasEndpointOverride()) {
             builder.endpointOverride(aws.endpoint())
                     .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test")));
         } else {

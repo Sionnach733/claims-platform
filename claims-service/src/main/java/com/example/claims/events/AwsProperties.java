@@ -12,4 +12,9 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("app.aws")
 public record AwsProperties(@NotBlank String region, URI endpoint) {
+
+    /** In AWS the endpoint is unset or blank (AWS_SQS_ENDPOINT=): use the SDK's normal regional endpoint. */
+    public boolean hasEndpointOverride() {
+        return endpoint != null && !endpoint.toString().isBlank();
+    }
 }

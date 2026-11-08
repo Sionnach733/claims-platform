@@ -1,0 +1,31 @@
+# Weekly dependency updates. Minor/patch bumps are grouped into one PR per ecosystem to keep the noise down;
+# majors arrive individually so they get proper review.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /claims-service
+    schedule: { interval: weekly }
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: uv
+    directory: /fraud-service
+    schedule: { interval: weekly }
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: npm
+    directory: /claims-ui
+    schedule: { interval: weekly }
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: docker
+    directories: [/claims-service, /fraud-service, /claims-ui]
+    schedule: { interval: weekly }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }

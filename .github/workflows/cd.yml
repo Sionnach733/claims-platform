@@ -1,0 +1,148 @@
+# Continuous delivery to AWS. Runs only after CI succeeded on main.
+#
+#   build-and-push  → images tagged with the commit SHA pushed to ECR (immutable tags, SBOM + provenance)
+#   plan            → terraform plan for exactly those image tags, saved as an artifact
+#   deploy          → applies that saved plan; gated by the "production" environment (required reviewers)
+#
+# AWS access uses GitHub's OIDC token to assume an IAM role (see infra/terraform/github-oidc.tf), so there are
+# no long-lived AWS keys in GitHub. The whole workflow is skipped until the repo variable AWS_DEPLOY_ROLE_ARN exists.
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false # never interrupt a deployment half-way
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  build-and-push:
+    name: Build and push ${{ matrix.service }}
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC token for AWS
+    strategy:
+      matrix:
+        service: [claims-service, fraud-service, claims-ui]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.service }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/claims-platform/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  plan:
+    name: Terraform plan
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v4
+      - name: Init (remote state in S3)
+        run: >-
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=claims-platform/production.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Plan
+        run: >-
+          terraform plan -input=false -out=tfplan
+          -var="image_tag=${{ env.IMAGE_TAG }}"
+          -var="github_repository=${{ github.repository }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tfplan
+          path: infra/terraform/tfplan
+          retention-days: 5
+
+  deploy:
+    name: Deploy to production
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production # configure required reviewers on this environment in GitHub
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false # so `terraform output -raw` prints clean values
+      - uses: actions/download-artifact@v7
+        with:
+          name: tfplan
+          path: infra/terraform
+      - name: Init
+        run: >-
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=claims-platform/production.tfstate"
+          -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Apply the reviewed plan
+        run: terraform apply -input=false tfplan
+      - name: Wait for ECS services to stabilise
+        run: |
+          cluster=$(terraform output -raw ecs_cluster_name)
+          mapfile -t services < <(terraform output -json ecs_service_names | jq -r '.[]')
+          aws ecs wait services-stable --cluster "$cluster" --services "${services[@]}"
+      - name: Smoke test
+        run: |
+          url=$(terraform output -raw app_url)
+          # UI is served...
+          curl --fail --silent --retry 10 --retry-delay 6 --retry-all-errors "$url/healthz"
+          # ...and /api reaches claims-service with security on: an anonymous call must be refused with 401.
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' "$url/api/v1/claims")
+          if [ "$status" != "401" ]; then echo "Expected 401 from /api/v1/claims, got $status"; exit 1; fi

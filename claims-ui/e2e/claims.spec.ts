@@ -59,7 +59,9 @@ test("a routine claim is submitted, auto-approved at the in-network rate, and pa
 
   await expect(heading(page)).toContainText("Approved");
   await expect(page.getByText(/Auto-approved: all \d+ rules passed; priced at 80% of billed/)).toBeVisible();
-  await expect(page.getByText(/· LOW/)).toBeVisible(); // scored by the real fraud-service
+  // Scored by the real fraud-service. The exact score depends on recent activity already in the database
+  // (velocity signals), so assert the outcome, not the number: below the review threshold.
+  await expect(page.getByText(/^\d+ · (LOW|MEDIUM)$/)).toBeVisible();
 
   await page.getByRole("button", { name: "Mark as paid ($100.40)" }).click();
 
@@ -78,14 +80,14 @@ test("a suspicious claim is routed to manual review by the fraud score, then den
   page,
 }) => {
   await signIn(page, "adjudicator");
-  // Knee replacement billed with an asthma diagnosis and 12 units: fraud-service scores this ~60 (MEDIUM),
-  // which is at or above the review threshold of 50.
+  // Knee replacement billed with an asthma diagnosis and 12 units: fraud-service scores this at least 60
+  // (higher if the member/provider have recent activity), at or above the review threshold of 50.
   await submitClaim(page, { cpt: "27447", icd: "J45.909", units: "12", amount: "4900.00" });
 
   await page.getByRole("button", { name: "Adjudicate" }).click();
 
   await expect(heading(page)).toContainText("In review");
-  await expect(page.getByText(/Fraud risk score \d+ \(MEDIUM\) at or above 50/)).toBeVisible();
+  await expect(page.getByText(/Fraud risk score \d+ \((MEDIUM|HIGH)\) at or above 50/)).toBeVisible();
   await expect(page.getByText("PROCEDURE_DIAGNOSIS_MISMATCH", { exact: false })).toBeVisible();
 
   const deny = page.getByRole("button", { name: "Deny" });

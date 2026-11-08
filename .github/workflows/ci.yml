@@ -1,0 +1,178 @@
+# Continuous integration: every PR and every push to main.
+# Each service is built and tested only when its code changed; the end-to-end job runs the whole stack in Docker
+# (which also proves the Dockerfiles and compose file) and drives it with Playwright.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true # a newer push to the same branch supersedes this run
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      claims: ${{ steps.filter.outputs.claims }}
+      fraud: ${{ steps.filter.outputs.fraud }}
+      ui: ${{ steps.filter.outputs.ui }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            claims:
+              - 'claims-service/**'
+              - '.github/workflows/ci.yml'
+            fraud:
+              - 'fraud-service/**'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'claims-ui/**'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'claims-service/**'
+              - 'fraud-service/**'
+              - 'claims-ui/**'
+              - 'docker-compose.yml'
+              - 'infra/localstack/**'
+              - '.github/workflows/ci.yml'
+
+  claims-service:
+    name: claims-service (Java)
+    needs: changes
+    if: needs.changes.outputs.claims == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: claims-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # Unit + slice + Testcontainers (Postgres, LocalStack) + WireMock tests, then the JaCoCo 80% gate.
+      - name: Build, test and check coverage
+        run: ./mvnw -B --no-transfer-progress verify
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claims-service-coverage
+          path: claims-service/target/site/jacoco/
+          if-no-files-found: ignore
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claims-service-test-reports
+          path: claims-service/target/surefire-reports/
+
+  fraud-service:
+    name: fraud-service (Python)
+    needs: changes
+    if: needs.changes.outputs.fraud == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fraud-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: fraud-service/uv.lock
+      - name: Install (locked)
+        run: uv sync --frozen
+      - name: Lint and format check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Test (incl. Testcontainers MongoDB)
+        run: uv run pytest
+
+  claims-ui:
+    name: claims-ui (TypeScript)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: claims-ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: claims-ui/package-lock.json
+      - run: npm ci
+      - name: Lint, format and type check
+        run: |
+          npm run lint
+          npm run format:check
+          npm run typecheck
+      - name: Unit/component tests with coverage gate
+        run: npm run test:coverage
+      - name: Production build
+        run: npm run build
+
+  e2e:
+    name: End-to-end (Docker Compose + Playwright)
+    needs: [changes, claims-service, fraud-service, claims-ui]
+    # Run when something relevant changed and none of the service jobs failed (skipped is fine).
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.changes.outputs.e2e == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Start the full stack
+        run: docker compose up --build --detach --wait --wait-timeout 300
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: claims-ui/package-lock.json
+      - name: Install Playwright
+        working-directory: claims-ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run end-to-end tests
+        working-directory: claims-ui
+        env:
+          CI: "true"
+          E2E_BASE_URL: http://localhost:3000
+        run: npx playwright test
+      - name: Service logs
+        if: failure()
+        run: docker compose logs --no-color --tail 300
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            claims-ui/playwright-report/
+            claims-ui/test-results/
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

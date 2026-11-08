@@ -36,3 +36,6 @@ test-results/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Lock file generated locally by OpenTofu (registry.opentofu.org addresses) - CD generates the Terraform one
+infra/terraform/.terraform.lock.hcl

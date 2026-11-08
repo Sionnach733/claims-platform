@@ -1,9 +1,14 @@
-# Local infrastructure for the Claims Platform showcase.
-# Phase 1: backing services only (Postgres ≈ Aurora PostgreSQL, Mongo, LocalStack SQS).
-# Application services are added in later phases.
+# The whole Claims Platform showcase on one machine:
+#
+#   docker compose up --build -d --wait     # everything, healthy        → UI http://localhost:3000
+#   docker compose up -d postgres mongo localstack   # infra only, for running services from your IDE
+#
+# Postgres stands in for Aurora PostgreSQL, LocalStack for SQS, Mongo for DocumentDB/Atlas.
+# Secrets below are local-dev defaults; override them with a .env file (never commit real values).
 name: claims-platform
 
 services:
+  # ---------------------------------------------------------------- infrastructure
   postgres:
     image: postgres:16-alpine
     environment:
@@ -46,6 +51,53 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # ---------------------------------------------------------------- applications
+  fraud-service:
+    build: ./fraud-service
+    image: claims-platform/fraud-service:local
+    environment:
+      FRAUD_MONGO_URI: mongodb://mongo:27017
+      FRAUD_API_KEY: ${FRAUD_API_KEY:-local-dev-fraud-key}
+      FRAUD_MEMBER_HASH_KEY: ${FRAUD_MEMBER_HASH_KEY:-local-dev-only-not-a-secret}
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  claims-service:
+    build: ./claims-service
+    image: claims-platform/claims-service:local
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/claims
+      DB_USERNAME: claims
+      DB_PASSWORD: claims
+      FRAUD_SERVICE_URL: http://fraud-service:8000
+      FRAUD_API_KEY: ${FRAUD_API_KEY:-local-dev-fraud-key}
+      AWS_SQS_ENDPOINT: http://localstack:4566
+      AWS_REGION: eu-west-1
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-hmac-secret-change-me-0123456789}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      fraud-service:
+        condition: service_healthy
+
+  claims-ui:
+    build: ./claims-ui
+    image: claims-platform/claims-ui:local
+    environment:
+      CLAIMS_API_URL: http://claims-service:8080
+    ports:
+      - "3000:8080"
+    depends_on:
+      claims-service:
+        condition: service_healthy
 
 volumes:
   postgres-data:

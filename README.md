@@ -1,53 +1,109 @@
 # Claims Platform
 
-A small healthcare claims platform that shows a modern full-stack setup:
-Java/Spring Boot microservices, FastAPI, AWS-style
-infrastructure (Aurora PostgreSQL, SQS), MongoDB, React, GitHub Actions and test automation.
+A small but production-shaped healthcare claims platform, built to show a modern stack and engineering practices:
+Java/Spring Boot microservices,
+FastAPI, AWS (Aurora PostgreSQL, SQS, ECS), MongoDB, React, GitHub Actions CI/CD and test automation.
 
-See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
+## Quick start
+
+Needs only Docker:
+
+```bash
+docker compose up --build -d --wait
+```
+
+| What | Where |
+|---|---|
+| Claims workbench UI | http://localhost:3000 (sign in as `adjudicator` / `adjudicator-pass` or `submitter` / `submitter-pass`) |
+| claims-service API docs | http://localhost:8080/swagger-ui.html |
+| fraud-service API docs | http://localhost:8000/docs |
+
+Try it: submit a claim (member `AET100000001`, NPI `1234567893`, CPT `99213`, ICD-10 `J45.909`), adjudicate it,
+mark it paid. Then submit a suspicious one (CPT `27447`, ICD-10 `J45.909`, 12 units, 4900.00) and watch the fraud
+score send it to manual review. Stop everything with `docker compose down`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    user([Claims staff]) --> ui["claims-ui<br/>React + TypeScript<br/>nginx"]
+    ui -- "/api (JWT)" --> claims["claims-service<br/>Java 21 · Spring Boot 4"]
+    claims -- "REST + API key<br/>timeout · retry · circuit breaker" --> fraud["fraud-service<br/>Python · FastAPI"]
+    claims --> pg[("PostgreSQL<br/>Aurora in AWS")]
+    claims -- "transactional outbox" --> sqs[["SQS<br/>claim-status-events + DLQ"]]
+    fraud --> mongo[("MongoDB<br/>DocumentDB in AWS")]
+    sqs -.-> downstream([Payments · notifications · analytics])
+```
+
+- **claims-service** owns claims: intake and validation, a pluggable adjudication rules engine, the status
+  state machine, the audit trail, and events published through a transactional outbox.
+- **fraud-service** gives each claim an explainable 0-100 risk score and keeps the history in MongoDB.
+- **claims-ui** is the adjudicator's workbench.
+- Design decisions and trade-offs are in [docs/adr/](docs/adr/). The delivery story is in [docs/backlog.md](docs/backlog.md).
+
+## Stack at a glance
+
+| Capability | Where it's shown |
+|---|---|
+| Java microservices, Spring Boot, REST | `claims-service`: layered design, RFC 7807 errors, OpenAPI, Flyway, JPA with optimistic locking |
+| FastAPI | `fraud-service`: async FastAPI, Pydantic, async PyMongo |
+| Full stack | `claims-ui`: React 19, TypeScript strict, TanStack Query, react-hook-form + zod, accessible UI |
+| AWS / cloud native | SQS (outbox, DLQ), Aurora Serverless v2, ECS Fargate, ALB, Secrets Manager, CloudWatch in [`infra/terraform`](infra/terraform) |
+| RDS/Aurora + NoSQL (MongoDB) | Postgres for claims, MongoDB for scores ([ADR 0002](docs/adr/0002-relational-for-claims-document-store-for-scores.md)) |
+| CI/CD in GitHub Actions | [`ci.yml`](.github/workflows/ci.yml), [`cd.yml`](.github/workflows/cd.yml) (OIDC to AWS, gated prod apply), CodeQL, Dependabot |
+| Test automation in the SDLC | 226 tests: JUnit/Testcontainers/WireMock, pytest/Testcontainers, Vitest/RTL/MSW, Playwright E2E; coverage gates |
+| High-volume enterprise ecosystem | Outbox with `SKIP LOCKED`, circuit breaker, autoscaling, idempotent state transitions, indexes for search |
+| Engineering practices | ADRs, CLAUDE.md conventions, linters everywhere, PHI handling ([ADR 0005](docs/adr/0005-security-and-phi-handling.md)) |
+| Agile | Sprint-by-sprint backlog with acceptance criteria → tests ([docs/backlog.md](docs/backlog.md)) |
+| Adopting AI in delivery | [docs/ai-assisted-development.md](docs/ai-assisted-development.md): workflow, guardrails, and the defects the gates caught |
 
 ## Repository layout
 
-| Path | What it is | Status |
+| Path | What it is |
+|---|---|
+| `claims-service/` | Java 21 + Spring Boot 4 claims API (PostgreSQL, Flyway, SQS, Resilience4j, Spring Security) |
+| `fraud-service/` | Python 3.13 + FastAPI risk scoring (MongoDB), managed with uv |
+| `claims-ui/` | React 19 + TypeScript workbench (Vite), served by nginx in its container |
+| `infra/terraform/` | AWS: VPC, ECS Fargate, ALB, Aurora, DocumentDB, SQS, Secrets Manager, alarms, GitHub OIDC |
+| `infra/localstack/` | Creates the SQS queue + DLQ in LocalStack |
+| `.github/` | CI, CD, CodeQL, Dependabot |
+| `docs/` | ADRs, backlog, AI-assisted development notes |
+
+## Developing
+
+Prerequisites: Docker, JDK 21, [uv](https://docs.astral.sh/uv/), Node.js 22+.
+
+```bash
+docker compose up -d postgres mongo localstack        # infrastructure only
+(cd fraud-service && uv run fraud-service)             # :8000
+(cd claims-service && ./mvnw spring-boot:run)          # :8080
+(cd claims-ui && npm install && npm run dev)           # :5173, proxies /api to :8080
+```
+
+## Testing
+
+| Suite | Command | What it covers |
 |---|---|---|
-| `claims-service/` | Java 21 + Spring Boot 4 claims API (PostgreSQL, Flyway, SQS) | submit, search, adjudicate, events |
-| `fraud-service/` | Python 3.13 + FastAPI risk scoring (MongoDB) | scoring, history, health |
-| `claims-ui/` | React 19 + TypeScript claims workbench (Vite) | list, submit, detail, actions |
-| `infra/` | LocalStack init scripts, Terraform for AWS | partial |
-| `docs/adr/` | Architecture Decision Records | phase 7 |
+| claims-service | `cd claims-service && ./mvnw verify` | 132 tests: unit, `@WebMvcTest`, Testcontainers (Postgres, LocalStack SQS), WireMock; JaCoCo gate (80% lines, 70% branches; currently ~95%) |
+| fraud-service | `cd fraud-service && uv run ruff check . && uv run pytest` | 45 tests incl. Testcontainers MongoDB |
+| claims-ui | `cd claims-ui && npm run lint && npm run typecheck && npm run test:coverage` | 44 component tests on the real routes with MSW; 80% gate (currently ~95%) |
+| End-to-end | `cd claims-ui && E2E_BASE_URL=http://localhost:3000 npx playwright test` | 5 browser journeys against the full Docker stack |
 
-## Prerequisites
+## Delivery (CI/CD and AWS)
 
-- Docker
-- JDK 21 (`brew install openjdk@21`, then `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`)
-- [uv](https://docs.astral.sh/uv/) for the Python service (`brew install uv`)
-- Node.js 22+ for the UI
+- **CI** ([ci.yml](.github/workflows/ci.yml)), on every PR: only changed services are built. Each gets lint, type
+  checks, tests and coverage gates; then the whole stack starts with `docker compose up --wait` and Playwright
+  runs against it. CodeQL scans Java, Python, TypeScript and the workflows; Dependabot updates every ecosystem.
+- **CD** ([cd.yml](.github/workflows/cd.yml)), after CI passes on `main`: build and push SHA-tagged images (SBOM +
+  provenance) to ECR → `terraform plan` → **manual approval** on the `production` environment → apply that exact
+  plan → wait for ECS to stabilise → smoke test. GitHub authenticates to AWS with **OIDC**; there are no stored keys.
+- **Infrastructure** ([infra/terraform](infra/terraform)): private ECS Fargate services behind an ALB, Service
+  Connect between services, Aurora Serverless v2 (writer + reader), DocumentDB, SQS + DLQ, secrets in Secrets
+  Manager, deployment circuit breaker with rollback, CPU autoscaling, CloudWatch alarms (DLQ depth, 5xx, unhealthy targets).
 
-## Run locally
-
-```bash
-docker compose up -d                 # postgres, mongo, localstack (SQS)
-docker compose ps                    # all three should be "healthy"
-
-(cd fraud-service && uv run fraud-service)   # http://localhost:8000/docs (Swagger UI)
-(cd claims-service && ./mvnw spring-boot:run) # http://localhost:8080/actuator/health
-(cd claims-ui && npm install && npm run dev)  # http://localhost:5173 (proxies /api to :8080)
-```
-
-Or start the service with throwaway Testcontainers databases, so you don't need Compose:
-
-```bash
-cd claims-service && ./mvnw spring-boot:test-run
-```
-
-## Test
-
-```bash
-cd claims-service && ./mvnw verify                 # JUnit + Testcontainers (Postgres, LocalStack) + WireMock
-cd fraud-service  && uv run ruff check . && uv run pytest   # pytest + Testcontainers (MongoDB)
-cd claims-ui      && npm run lint && npm run typecheck && npm run test:coverage  # Vitest + RTL + MSW
-cd claims-ui      && npx playwright install chromium && npm run e2e  # Playwright against the running stack
-```
+To enable CD: run the first `terraform apply` as an administrator (it creates the GitHub deploy role), then set the
+repository variables `AWS_DEPLOY_ROLE_ARN` (from the `github_deploy_role_arn` output), `TF_STATE_BUCKET` and
+optionally `AWS_REGION`, and add required reviewers to the `production` environment. Until then CD skips itself.
 
 ## claims-ui
 
@@ -173,4 +229,4 @@ docker compose exec localstack awslocal sqs receive-message \
   --queue-url http://localhost:4566/000000000000/claim-status-events --max-number-of-messages 10
 ```
 
-Postgres runs on host port **5433** (so it doesn't clash with a locally installed Postgres).
+Local ports: Postgres is on host port **5433** (so it doesn't clash with a locally installed Postgres), Mongo 27017, LocalStack 4566.
