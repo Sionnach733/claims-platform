@@ -4,7 +4,7 @@
 
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
-FROM python:3.13-slim-bookworm AS build
+FROM python:3.15-slim-bookworm AS build
 COPY --from=uv /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-ins
 COPY src/ src/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
 
-FROM python:3.13-slim-bookworm
+FROM python:3.15-slim-bookworm
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
