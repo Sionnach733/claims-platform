@@ -2,7 +2,7 @@
 # claims-service: build with the JDK, run on the JRE as a non-root user, using Spring Boot's layered jar so a
 # code change only rebuilds the small "application" layer instead of re-shipping every dependency.
 
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM eclipse-temurin:25-jdk-noble AS build
 WORKDIR /src
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
@@ -13,7 +13,7 @@ COPY src/ src/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q package -DskipTests -Djacoco.skip=true \
  && java -Djarmode=tools -jar target/claims-service-*.jar extract --layers --launcher --destination /extracted
 
-FROM eclipse-temurin:21-jre-noble
+FROM eclipse-temurin:25-jre-noble
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
