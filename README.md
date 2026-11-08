@@ -11,7 +11,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
 | Path | What it is | Status |
 |---|---|---|
 | `claims-service/` | Java 21 + Spring Boot 4 claims API (PostgreSQL, Flyway, SQS) | submit, search, adjudicate, events |
-| `fraud-service/` | Python + FastAPI risk scoring (MongoDB) | phase 4 |
+| `fraud-service/` | Python 3.13 + FastAPI risk scoring (MongoDB) | scoring, history, health |
 | `claims-ui/` | React + TypeScript UI | phase 5 |
 | `infra/` | LocalStack init scripts, Terraform for AWS | partial |
 | `docs/adr/` | Architecture Decision Records | phase 7 |
@@ -20,6 +20,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
 
 - Docker
 - JDK 21 (`brew install openjdk@21`, then `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`)
+- [uv](https://docs.astral.sh/uv/) for the Python service (`brew install uv`)
 
 ## Run locally
 
@@ -27,8 +28,8 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
 docker compose up -d                 # postgres, mongo, localstack (SQS)
 docker compose ps                    # all three should be "healthy"
 
-cd claims-service
-./mvnw spring-boot:run               # http://localhost:8080/actuator/health
+(cd fraud-service && uv run fraud-service)   # http://localhost:8000/docs (Swagger UI)
+(cd claims-service && ./mvnw spring-boot:run) # http://localhost:8080/actuator/health
 ```
 
 Or start the service with throwaway Testcontainers databases, so you don't need Compose:
@@ -40,7 +41,8 @@ cd claims-service && ./mvnw spring-boot:test-run
 ## Test
 
 ```bash
-cd claims-service && ./mvnw verify   # needs Docker for Testcontainers
+cd claims-service && ./mvnw verify                 # JUnit + Testcontainers (Postgres, LocalStack) + WireMock
+cd fraud-service  && uv run ruff check . && uv run pytest   # pytest + Testcontainers (MongoDB)
 ```
 
 ## claims-service API (v1)
@@ -96,9 +98,25 @@ otherwise the claim is **approved** and priced (in-network 80%, out-of-network 5
 | 10 | `MemberEligibilityRule` | deny `COVERAGE_INACTIVE` if not covered on the service date |
 | 20 | `KnownProviderRule` | deny `PROVIDER_UNKNOWN` if the NPI isn't registered |
 | 30 | `DuplicateClaimRule` | deny `DUPLICATE_CLAIM` if an earlier claim bills the same member/provider/date/CPT |
+| 90 | `FraudRiskRule` | review if fraud-service score ≥ 70, **or if screening is unavailable** |
 | 100 | `HighValueReviewRule` | review if billed ≥ `app.adjudication.manual-review-threshold` (5000) |
 
 Add a rule by adding a `@Component` that implements `AdjudicationRule`: nothing else changes.
+
+## Fraud screening (fraud-service)
+
+`POST /v1/score` returns an explainable 0–100 score from rule-based signals (billed amount,
+units per line, unit price vs benchmark, procedure/diagnosis mismatch, provider and member velocity),
+and stores every assessment in MongoDB (`GET /v1/scores/{claimNumber}` for the history).
+
+- **Pseudonymised storage**: member IDs are HMAC-SHA256 hashed with a secret key before storage;
+  velocity checks work on the hash. A TTL index expires documents after `FRAUD_RETENTION_DAYS`.
+- **claims-service → fraud-service** uses `RestClient` with connect/read timeouts, a **retry**
+  (I/O errors and 5xx only, never 4xx) and a **circuit breaker** (Resilience4j, metrics in Actuator).
+- **Fail-safe**: any failure becomes `Unavailable`, which routes the claim to manual review.
+  Fraud signals never auto-deny, and an outage never auto-approves.
+- The fraud call runs **outside** the DB transaction; the decision is applied afterwards with an
+  optimistic version check, so a slow dependency never holds a DB connection.
 
 ## Events (transactional outbox → SQS)
 

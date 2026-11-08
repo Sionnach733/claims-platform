@@ -1,0 +1,45 @@
+[project]
+name = "fraud-service"
+version = "0.1.0"
+description = "Claim fraud/anomaly risk scoring service (FastAPI + MongoDB)"
+authors = [
+    { name = "Sionnach733", email = "jamescuddy89@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.162.2",
+    "pydantic-settings>=2.16.2",
+    "pymongo>=4.19.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+fraud-service = "fraud_service:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+    "testcontainers[mongodb]>=4.15.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs Docker (Testcontainers MongoDB)"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = ["RUF001"]  # allow ≥ / × in human-readable reason strings
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]  # asserts and dummy secrets are fine in tests

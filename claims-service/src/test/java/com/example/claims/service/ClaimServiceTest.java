@@ -3,6 +3,7 @@ package com.example.claims.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,9 +27,17 @@ import com.example.claims.service.adjudication.PricingPolicy;
 import com.example.claims.service.adjudication.rules.HighValueReviewRule;
 import com.example.claims.service.adjudication.rules.KnownProviderRule;
 import com.example.claims.service.adjudication.rules.MemberEligibilityRule;
+import com.example.claims.fraud.FraudAssessment;
+import com.example.claims.fraud.FraudClient;
+import com.example.claims.fraud.FraudScoreRequest;
+import com.example.claims.fraud.FraudServiceProperties;
+import com.example.claims.service.adjudication.rules.FraudRiskRule;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -40,6 +49,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class ClaimServiceTest {
@@ -60,16 +73,26 @@ class ClaimServiceTest {
     private ProviderRepository providers;
 
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    private final List<FraudScoreRequest> fraudRequests = new ArrayList<>();
+    private FraudAssessment fraudResult = new FraudAssessment.Scored(10, "LOW", List.of(), "test");
     private ClaimService service;
 
     @BeforeEach
     void setUp() {
         var props = new AdjudicationProperties(new BigDecimal("0.80"), new BigDecimal("0.50"), new BigDecimal("5000"));
+        var fraudProps = new FraudServiceProperties(URI.create("http://fraud"), Duration.ofSeconds(1),
+                Duration.ofSeconds(1), 70, new FraudServiceProperties.Retry(1, Duration.ZERO),
+                new FraudServiceProperties.CircuitBreaker(50, 10, 5, Duration.ofSeconds(1), 1));
         var pricing = new PricingPolicy(props);
         var engine = new AdjudicationEngine(List.of(new MemberEligibilityRule(), new KnownProviderRule(),
-                new HighValueReviewRule(props)), pricing);
+                new FraudRiskRule(fraudProps), new HighValueReviewRule(props)), pricing);
+        FraudClient fraudClient = request -> {
+            fraudRequests.add(request);
+            return fraudResult;
+        };
+        var tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
         service = new ClaimService(claims, members, providers, engine, pricing, new CurrentActor(),
-                Clock.fixed(NOW, ZoneOffset.UTC), meters);
+                fraudClient, tx, Clock.fixed(NOW, ZoneOffset.UTC), meters);
     }
 
     // ---- submit / get / search ------------------------------------------------------------
@@ -149,6 +172,67 @@ class ClaimServiceTest {
 
         assertThat(result.status()).isEqualTo(ClaimStatus.DENIED);
         assertThat(result.denialReason()).startsWith("PROVIDER_UNKNOWN:");
+    }
+
+    @Test
+    void adjudicateSendsClaimToFraudScreeningAndRecordsTheScore() {
+        givenStoredClaim(claim("100.00"));
+
+        ClaimResponse result = service.adjudicate("CLM-1");
+
+        assertThat(fraudRequests).singleElement().satisfies(r -> {
+            assertThat(r.claimNumber()).isEqualTo("CLM-1");
+            assertThat(r.lines()).hasSize(1);
+        });
+        assertThat(result.riskScore()).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void highFraudScoreRoutesToReviewNotDenial() {
+        fraudResult = new FraudAssessment.Scored(85, "HIGH", List.of("EXCESSIVE_UNITS: 12 units"), "test");
+        givenStoredClaim(claim("100.00"));
+
+        ClaimResponse result = service.adjudicate("CLM-1");
+
+        assertThat(result.status()).isEqualTo(ClaimStatus.IN_REVIEW);
+        assertThat(result.riskScore()).isEqualByComparingTo("85");
+        assertThat(result.history()).last().extracting(ClaimResponse.StatusChange::reason).asString()
+                .contains("Fraud risk score 85");
+    }
+
+    @Test
+    void fraudServiceOutageFailsSafeToReview() {
+        fraudResult = new FraudAssessment.Unavailable("Fraud screening unavailable (circuit breaker open)");
+        givenStoredClaim(claim("100.00"));
+
+        ClaimResponse result = service.adjudicate("CLM-1");
+
+        assertThat(result.status()).isEqualTo(ClaimStatus.IN_REVIEW);
+        assertThat(result.riskScore()).isNull();
+        assertThat(meters.counter("claims.adjudication.decisions", "outcome", "review").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void ineligibleMemberIsStillDeniedEvenWhenFraudScreeningIsDown() {
+        fraudResult = new FraudAssessment.Unavailable("down");
+        Member lapsed = new Member("AET100000001", "A", "B", LocalDate.of(1980, 1, 1), "PPO",
+                LocalDate.of(2020, 1, 1), LocalDate.of(2021, 1, 1));
+        when(claims.findByClaimNumber("CLM-1")).thenReturn(Optional.of(claim("100.00")));
+        when(members.findByMemberId("AET100000001")).thenReturn(Optional.of(lapsed));
+        when(providers.findByNpi("1234567893")).thenReturn(Optional.of(PROVIDER));
+
+        assertThat(service.adjudicate("CLM-1").status()).isEqualTo(ClaimStatus.DENIED);
+    }
+
+    @Test
+    void concurrentChangeDuringFraudCallIsRejected() {
+        Claim original = claim("100.00");
+        Claim changed = claim("100.00");
+        ReflectionTestUtils.setField(changed, "version", 1L); // someone else updated the claim meanwhile
+        when(claims.findByClaimNumber("CLM-1")).thenReturn(Optional.of(original), Optional.of(changed));
+
+        assertThatThrownBy(() -> service.adjudicate("CLM-1"))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
     }
 
     @Test

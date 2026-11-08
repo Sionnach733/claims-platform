@@ -6,6 +6,7 @@ import com.example.claims.domain.Claim;
 import com.example.claims.domain.ClaimLine;
 import com.example.claims.domain.Member;
 import com.example.claims.domain.Provider;
+import com.example.claims.fraud.FraudAssessment;
 import com.example.claims.service.adjudication.rules.HighValueReviewRule;
 import com.example.claims.service.adjudication.rules.KnownProviderRule;
 import com.example.claims.service.adjudication.rules.MemberEligibilityRule;
@@ -22,6 +23,7 @@ class AdjudicationEngineTest {
     static final AdjudicationProperties PROPS =
             new AdjudicationProperties(new BigDecimal("0.80"), new BigDecimal("0.50"), new BigDecimal("5000.00"));
     static final PricingPolicy PRICING = new PricingPolicy(PROPS);
+    static final FraudAssessment LOW_RISK = new FraudAssessment.Scored(5, "LOW", List.of(), "test");
 
     static final LocalDate SERVICE_DATE = LocalDate.of(2026, 11, 1);
     static final Member ACTIVE = new Member("AET100000001", "A", "B", LocalDate.of(1980, 1, 1), "PPO",
@@ -130,7 +132,7 @@ class AdjudicationEngineTest {
     }
 
     private static AdjudicationContext ctx(String billed, Optional<Member> member, Optional<Provider> provider) {
-        return new AdjudicationContext(claim(billed), member, provider);
+        return new AdjudicationContext(claim(billed), member, provider, LOW_RISK);
     }
 
     private static Claim claim(String billed) {

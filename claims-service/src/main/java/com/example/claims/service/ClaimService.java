@@ -10,6 +10,9 @@ import com.example.claims.domain.ClaimLine;
 import com.example.claims.domain.ClaimStatus;
 import com.example.claims.domain.InvalidStatusTransitionException;
 import com.example.claims.domain.Provider;
+import com.example.claims.fraud.FraudAssessment;
+import com.example.claims.fraud.FraudClient;
+import com.example.claims.fraud.FraudScoreRequest;
 import com.example.claims.repository.ClaimRepository;
 import com.example.claims.repository.ClaimSpecifications;
 import com.example.claims.repository.MemberRepository;
@@ -19,6 +22,7 @@ import com.example.claims.service.adjudication.AdjudicationDecision;
 import com.example.claims.service.adjudication.AdjudicationEngine;
 import com.example.claims.service.adjudication.PricingPolicy;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,8 +32,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Application service for claims. Entities never leave this class: every public method maps to
@@ -46,18 +52,22 @@ public class ClaimService {
     private final AdjudicationEngine engine;
     private final PricingPolicy pricing;
     private final CurrentActor actor;
+    private final FraudClient fraudClient;
+    private final TransactionTemplate tx;
     private final Clock clock;
     private final MeterRegistry meters;
 
     public ClaimService(ClaimRepository claims, MemberRepository members, ProviderRepository providers,
-                        AdjudicationEngine engine, PricingPolicy pricing, CurrentActor actor, Clock clock,
-                        MeterRegistry meters) {
+                        AdjudicationEngine engine, PricingPolicy pricing, CurrentActor actor,
+                        FraudClient fraudClient, TransactionTemplate tx, Clock clock, MeterRegistry meters) {
         this.claims = claims;
         this.members = members;
         this.providers = providers;
         this.engine = engine;
         this.pricing = pricing;
         this.actor = actor;
+        this.fraudClient = fraudClient;
+        this.tx = tx;
         this.clock = clock;
         this.meters = meters;
     }
@@ -99,19 +109,33 @@ public class ClaimService {
     }
 
     /**
-     * Run the rules engine against a SUBMITTED claim. Not idempotent by design: a second call
-     * finds the claim already decided and gets a 409, so a retry can never double-process.
+     * Run fraud screening and the rules engine against a SUBMITTED claim. Not idempotent by design:
+     * a second call finds the claim already decided and gets a 409, so a retry can't double-process.
+     *
+     * <p>Deliberately <b>not</b> one transaction. The fraud-service call happens with no DB transaction
+     * open, so a slow dependency can't hold a pooled connection (and row locks) for the length of its
+     * timeout. The decision is then applied in a short transaction that checks the claim's version
+     * hasn't changed since it was read (optimistic concurrency).
      */
-    @Transactional
     public ClaimResponse adjudicate(String claimNumber) {
+        Claim snapshot = load(claimNumber);               // short read-only transaction (repository default)
+        requireSubmitted(snapshot);
+        FraudAssessment fraud = fraudClient.assess(FraudScoreRequest.from(snapshot)); // no transaction held
+        return tx.execute(status -> decide(claimNumber, snapshot.getVersion(), fraud));
+    }
+
+    private ClaimResponse decide(String claimNumber, long expectedVersion, FraudAssessment fraud) {
         Claim claim = load(claimNumber);
-        if (claim.getStatus() != ClaimStatus.SUBMITTED) {
-            throw new InvalidStatusTransitionException(claim.getStatus(), ClaimStatus.SUBMITTED,
-                    "Claim %s has already been adjudicated (status %s)".formatted(claimNumber, claim.getStatus()));
+        if (claim.getVersion() != expectedVersion) {
+            throw new ObjectOptimisticLockingFailureException(Claim.class, claimNumber);
+        }
+        requireSubmitted(claim);
+        if (fraud instanceof FraudAssessment.Scored scored) {
+            claim.recordRiskScore(BigDecimal.valueOf(scored.score()));
         }
 
         Optional<Provider> provider = providers.findByNpi(claim.getProviderNpi());
-        var context = new AdjudicationContext(claim, members.findByMemberId(claim.getMemberId()), provider);
+        var context = new AdjudicationContext(claim, members.findByMemberId(claim.getMemberId()), provider, fraud);
         AdjudicationDecision decision = engine.adjudicate(context);
         Instant now = clock.instant();
         String by = CurrentActor.SYSTEM_ADJUDICATOR;
@@ -167,6 +191,14 @@ public class ClaimService {
 
         log.info("Claim status changed claimNumber={} status={} by={}", claimNumber, claim.getStatus(), by);
         return ClaimResponse.from(claim); // managed entity: dirty checking flushes it, no save() needed
+    }
+
+    private static void requireSubmitted(Claim claim) {
+        if (claim.getStatus() != ClaimStatus.SUBMITTED) {
+            throw new InvalidStatusTransitionException(claim.getStatus(), ClaimStatus.SUBMITTED,
+                    "Claim %s has already been adjudicated (status %s)".formatted(claim.getClaimNumber(),
+                            claim.getStatus()));
+        }
     }
 
     private Claim load(String claimNumber) {

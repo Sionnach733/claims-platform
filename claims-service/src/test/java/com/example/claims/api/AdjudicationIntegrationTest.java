@@ -127,6 +127,38 @@ class AdjudicationIntegrationTest {
     }
 
     @Test
+    void cleanClaimRecordsTheFraudScore() throws Exception {
+        String claim = submit(ACTIVE_MEMBER, IN_NETWORK, uniqueDate(), "99213", "110.00");
+
+        adjudicate(claim)
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.riskScore").value(12));
+    }
+
+    @Test
+    void highFraudScoreGoesToManualReview() throws Exception {
+        String claim = submit(ACTIVE_MEMBER, IN_NETWORK, uniqueDate(), "99213",
+                TestcontainersConfiguration.HIGH_RISK_AMOUNT);
+
+        adjudicate(claim)
+                .andExpect(jsonPath("$.status").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.riskScore").value(88))
+                .andExpect(jsonPath("$.history[1].reason").value(startsWith("Fraud risk score 88 (HIGH)")));
+    }
+
+    @Test
+    void fraudServiceOutageDegradesToManualReviewInsteadOfFailing() throws Exception {
+        String claim = submit(ACTIVE_MEMBER, IN_NETWORK, uniqueDate(), "99213",
+                TestcontainersConfiguration.FRAUD_OUTAGE_AMOUNT);
+
+        adjudicate(claim)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.riskScore").doesNotExist())
+                .andExpect(jsonPath("$.history[1].reason").value(startsWith("Fraud screening unavailable")));
+    }
+
+    @Test
     void illegalTransitionsAreRejectedWith409() throws Exception {
         String claim = submit(ACTIVE_MEMBER, IN_NETWORK, uniqueDate(), "99213", "80.00");
 

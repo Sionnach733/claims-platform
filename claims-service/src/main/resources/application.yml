@@ -36,6 +36,18 @@ management:
 app:
   fraud-service:
     base-url: ${FRAUD_SERVICE_URL:http://localhost:8000}
+    connect-timeout: 500ms
+    read-timeout: 1500ms
+    review-threshold: 70          # score >= this routes the claim to manual review
+    retry:
+      max-attempts: 2             # 1 retry: absorbs a blip without doubling worst-case latency much
+      backoff: 100ms
+    circuit-breaker:
+      failure-rate-threshold: 50  # % of failed calls in the window that opens the circuit
+      sliding-window-size: 10
+      minimum-number-of-calls: 5
+      wait-duration-in-open-state: 10s
+      permitted-calls-in-half-open-state: 2
   adjudication:
     in-network-rate: 0.80
     out-of-network-rate: 0.50
