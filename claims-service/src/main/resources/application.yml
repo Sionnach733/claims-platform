@@ -36,5 +36,15 @@ management:
 app:
   fraud-service:
     base-url: ${FRAUD_SERVICE_URL:http://localhost:8000}
+  adjudication:
+    in-network-rate: 0.80
+    out-of-network-rate: 0.50
+    manual-review-threshold: 5000.00
   events:
-    queue-url: ${CLAIM_EVENTS_QUEUE_URL:http://localhost:4566/000000000000/claim-status-events}
+    publisher-enabled: ${EVENTS_PUBLISHER_ENABLED:true}
+    queue-name: ${CLAIM_EVENTS_QUEUE_NAME:claim-status-events}
+    batch-size: 10            # SQS max per batch; also bounds how long outbox row locks are held
+    poll-interval: 2s
+  aws:
+    region: ${AWS_REGION:eu-west-1}
+    endpoint: ${AWS_SQS_ENDPOINT:http://localhost:4566}   # LocalStack; set AWS_SQS_ENDPOINT= (empty) in real AWS

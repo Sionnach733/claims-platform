@@ -1,0 +1,15 @@
+package com.example.claims.events;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+
+@Validated
+@ConfigurationProperties("app.events")
+public record EventProperties(
+        boolean publisherEnabled,
+        @NotBlank String queueName,
+        @Min(1) @Max(10) int batchSize) {
+}

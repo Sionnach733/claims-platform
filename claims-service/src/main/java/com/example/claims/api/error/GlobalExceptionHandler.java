@@ -1,5 +1,6 @@
 package com.example.claims.api.error;
 
+import com.example.claims.domain.InvalidStatusTransitionException;
 import com.example.claims.service.BusinessRuleViolationException;
 import com.example.claims.service.InvalidRequestException;
 import com.example.claims.service.ResourceNotFoundException;
@@ -58,6 +59,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, "business-rule-violation",
                 "Business rule violated", ex.getMessage());
         problem.setProperty("code", ex.getCode());
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidStatusTransitionException.class)
+    ProblemDetail invalidTransition(InvalidStatusTransitionException ex) {
+        ProblemDetail problem = problem(HttpStatus.CONFLICT, "invalid-status-transition",
+                "Invalid status transition", ex.getMessage());
+        problem.setProperty("currentStatus", ex.getFrom());
+        problem.setProperty("allowedTransitions", ex.getFrom().allowedTransitions().stream().sorted().toList());
         return problem;
     }
 

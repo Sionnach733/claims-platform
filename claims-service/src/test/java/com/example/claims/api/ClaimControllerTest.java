@@ -3,17 +3,23 @@ package com.example.claims.api;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.claims.api.dto.ClaimResponse;
 import com.example.claims.api.dto.SubmitClaimRequest;
+import com.example.claims.api.dto.UpdateStatusRequest;
 import com.example.claims.domain.Claim;
 import com.example.claims.domain.ClaimLine;
+import com.example.claims.domain.ClaimStatus;
+import com.example.claims.domain.InvalidStatusTransitionException;
 import com.example.claims.service.BusinessRuleViolationException;
 import com.example.claims.service.ClaimService;
 import com.example.claims.service.ResourceNotFoundException;
@@ -51,9 +57,9 @@ class ClaimControllerTest {
     @Test
     void submitReturns201WithLocationHeader() throws Exception {
         Claim claim = new Claim("CLM-2026-00000001", "AET100000001", "1234567893",
-                LocalDate.of(2026, 11, 1), Instant.parse("2026-11-08T10:00:00Z"));
+                LocalDate.of(2026, 11, 1), Instant.parse("2026-11-08T10:00:00Z"), "anonymous");
         claim.addLine(new ClaimLine("99213", "J45.909", 1, new BigDecimal("125.50")));
-        when(claimService.submit(any(SubmitClaimRequest.class))).thenReturn(claim);
+        when(claimService.submit(any(SubmitClaimRequest.class))).thenReturn(ClaimResponse.from(claim));
 
         mvc.perform(post("/api/v1/claims").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isCreated())
@@ -127,6 +133,27 @@ class ClaimControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.detail").value("Claim 'CLM-NOPE' was not found"));
+    }
+
+    @Test
+    void illegalTransitionReturns409WithAllowedTransitions() throws Exception {
+        when(claimService.changeStatus(eq("CLM-1"), any(UpdateStatusRequest.class)))
+                .thenThrow(new InvalidStatusTransitionException(ClaimStatus.APPROVED, ClaimStatus.DENIED));
+
+        mvc.perform(patch("/api/v1/claims/CLM-1/status").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DENIED\",\"reason\":\"x\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value(endsWith("/invalid-status-transition")))
+                .andExpect(jsonPath("$.currentStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.allowedTransitions[0]").value("PAID"));
+    }
+
+    @Test
+    void statusChangeWithoutTargetStatusIs400() throws Exception {
+        mvc.perform(patch("/api/v1/claims/CLM-1/status").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("status"));
     }
 
     @Test
