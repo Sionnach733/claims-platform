@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useAdjudicate, useChangeStatus, useClaim } from "../api/hooks";
+import { hasRole, useSession } from "../auth/session";
 import type { Claim } from "../api/types";
 import { ProblemAlert } from "../components/ProblemAlert";
 import { RiskBadge } from "../components/RiskBadge";
@@ -121,8 +122,12 @@ export function ClaimDetailPage() {
   );
 }
 
-/** Only offers the actions the claim's current status allows (the server enforces it regardless). */
+/**
+ * Only offers actions the user's role and the claim's status allow. Hiding buttons is a usability
+ * feature, not security: the API enforces both rules regardless.
+ */
 function ClaimActions({ claim }: { claim: Claim }) {
+  const session = useSession();
   const adjudicate = useAdjudicate();
   const changeStatus = useChangeStatus();
   const [reason, setReason] = useState("");
@@ -132,6 +137,14 @@ function ClaimActions({ claim }: { claim: Claim }) {
 
   const change = (status: Claim["status"]) =>
     changeStatus.mutate({ claimNumber: n, status, reason }, { onSuccess: () => setReason("") });
+
+  if (!hasRole(session, "ADJUDICATOR")) {
+    return (
+      <div className="actions-panel" aria-label="Claim actions" role="region">
+        <p className="muted">Adjudication actions require the Adjudicator role.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="actions-panel" aria-label="Claim actions" role="region">

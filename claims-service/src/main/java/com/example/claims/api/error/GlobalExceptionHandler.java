@@ -1,10 +1,10 @@
 package com.example.claims.api.error;
 
 import com.example.claims.domain.InvalidStatusTransitionException;
+import com.example.claims.observability.CorrelationId;
 import com.example.claims.service.BusinessRuleViolationException;
 import com.example.claims.service.InvalidRequestException;
 import com.example.claims.service.ResourceNotFoundException;
-import java.net.URI;
 import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -30,7 +32,6 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-    private static final String TYPE_BASE = "https://claims.example.com/problems/";
 
     public record FieldViolation(String field, String message) {
     }
@@ -97,10 +98,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 "An unexpected error occurred");
     }
 
+    /** Authentication failure inside a controller (e.g. wrong password on the token endpoint). */
+    @ExceptionHandler(AuthenticationException.class)
+    ResponseEntity<ProblemDetail> unauthenticated(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(problem(HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Invalid username or password"));
+    }
+
+    /** @PreAuthorize denials. Without this the catch-all below would turn a 403 into a 500. */
+    @ExceptionHandler(AccessDeniedException.class)
+    ProblemDetail forbidden(AccessDeniedException ex) {
+        return problem(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "You don't have permission to perform this action");
+    }
+
+    /** Framework-generated problems (malformed JSON, 405, type mismatch...) also get the correlation ID. */
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+                                                             HttpStatusCode statusCode, WebRequest request) {
+        if (body instanceof ProblemDetail problem
+                && (problem.getProperties() == null || !problem.getProperties().containsKey("correlationId"))) {
+            CorrelationId.current().ifPresent(id -> problem.setProperty("correlationId", id));
+        }
+        return super.handleExceptionInternal(ex, body, headers, statusCode, request);
+    }
+
     private static ProblemDetail problem(HttpStatus status, String type, String title, String detail) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setType(URI.create(TYPE_BASE + type));
-        problem.setTitle(title);
-        return problem;
+        return Problems.create(status, type, title, detail);
     }
 }

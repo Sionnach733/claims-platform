@@ -1,5 +1,6 @@
 package com.example.claims.fraud;
 
+import com.example.claims.observability.CorrelationIdPropagator;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -71,6 +72,8 @@ public class FraudClientConfig {
         RestClient http = builder
                 .baseUrl(props.baseUrl().toString())
                 .requestFactory(requestFactory)
+                .defaultHeader("X-API-Key", props.apiKey())
+                .requestInterceptor(new CorrelationIdPropagator())
                 .build();
         return new HttpFraudClient(http, circuitBreaker, retry);
     }

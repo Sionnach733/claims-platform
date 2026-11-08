@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 
 from fraud_service.models import ScoreRequest, ScoreResponse
+from fraud_service.security import require_api_key
 from fraud_service.service import ScoringService
 
-router = APIRouter()
+router = APIRouter()  # health endpoints: open, for load balancers
+scoring = APIRouter(dependencies=[Depends(require_api_key)])  # business endpoints: caller must present the key
 
 
 def get_service(request: Request) -> ScoringService:
@@ -17,12 +19,12 @@ def get_service(request: Request) -> ScoringService:
 Service = Annotated[ScoringService, Depends(get_service)]
 
 
-@router.post("/v1/score", response_model=ScoreResponse, tags=["scoring"], summary="Score a claim for fraud risk")
+@scoring.post("/v1/score", response_model=ScoreResponse, tags=["scoring"], summary="Score a claim for fraud risk")
 async def score_claim(body: ScoreRequest, service: Service) -> ScoreResponse:
     return await service.score(body)
 
 
-@router.get(
+@scoring.get(
     "/v1/scores/{claim_number}",
     response_model=list[ScoreResponse],
     tags=["scoring"],

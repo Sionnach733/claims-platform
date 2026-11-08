@@ -462,3 +462,27 @@ th {
   display: flex;
   justify-content: flex-end;
 }
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.login {
+  max-width: 380px;
+  margin: 3rem auto;
+}
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+.reference {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}

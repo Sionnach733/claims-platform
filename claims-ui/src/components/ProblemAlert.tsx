@@ -20,6 +20,11 @@ export function ProblemAlert({ error, title }: { error: unknown; title?: string 
           ))}
         </ul>
       )}
+      {error instanceof ApiError && error.correlationId && (
+        <p className="reference">
+          Reference: <code>{error.correlationId}</code>
+        </p>
+      )}
       {problem?.allowedTransitions && (
         <p className="muted">
           Allowed from {problem.currentStatus}:{" "}

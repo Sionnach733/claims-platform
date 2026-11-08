@@ -87,4 +87,13 @@ export interface ProblemDetail {
   code?: string;
   currentStatus?: ClaimStatus;
   allowedTransitions?: ClaimStatus[];
+  correlationId?: string;
+}
+
+export interface TokenResponse {
+  accessToken: string;
+  tokenType: "Bearer";
+  expiresIn: number;
+  username: string;
+  roles: string[];
 }

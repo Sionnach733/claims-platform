@@ -82,7 +82,7 @@ class ClaimServiceTest {
         var props = new AdjudicationProperties(new BigDecimal("0.80"), new BigDecimal("0.50"), new BigDecimal("5000"));
         var fraudProps = new FraudServiceProperties(URI.create("http://fraud"), Duration.ofSeconds(1),
                 Duration.ofSeconds(1), 70, new FraudServiceProperties.Retry(1, Duration.ZERO),
-                new FraudServiceProperties.CircuitBreaker(50, 10, 5, Duration.ofSeconds(1), 1));
+                new FraudServiceProperties.CircuitBreaker(50, 10, 5, Duration.ofSeconds(1), 1), "test-api-key");
         var pricing = new PricingPolicy(props);
         var engine = new AdjudicationEngine(List.of(new MemberEligibilityRule(), new KnownProviderRule(),
                 new FraudRiskRule(fraudProps), new HighValueReviewRule(props)), pricing);

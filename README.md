@@ -61,6 +61,32 @@ TanStack Query owns server state (cache, retries on 5xx only, invalidation after
 run the real routes against an MSW mock API; Playwright runs the full journey against the real services,
 including a suspicious claim that the live fraud-service routes to manual review.
 
+## Security
+
+| | |
+|---|---|
+| **Users** | Demo users `submitter` / `submitter-pass` (role SUBMITTER) and `adjudicator` / `adjudicator-pass` (role ADJUDICATOR) |
+| **Login** | `POST /api/v1/auth/token` returns a 1-hour HS256 JWT. In production an identity provider (Cognito/Okta) issues tokens and this endpoint goes away; the resource-server config stays |
+| **Authorisation** | SUBMITTER: submit and view. ADJUDICATOR: also adjudicate and change status. Enforced with `@PreAuthorize` next to each endpoint; the UI hides what you can't do, the API refuses it regardless |
+| **Errors** | 401/403 are RFC 7807 problem details like every other error |
+| **Service-to-service** | claims-service calls fraud-service with an `X-API-Key` (constant-time compared). In AWS: Secrets Manager, or IAM/mTLS |
+| **API docs** | Swagger UI at http://localhost:8080/swagger-ui.html (click *Authorize* and paste a token), fraud-service at http://localhost:8000/docs |
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/token -H 'Content-Type: application/json' \
+  -d '{"username":"adjudicator","password":"adjudicator-pass"}' | jq -r .accessToken)
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/claims
+```
+
+## Observability
+
+- **Correlation ID**: the UI sends a fresh `X-Correlation-Id` on every call. claims-service accepts it (or makes one),
+  puts it in the logging MDC, echoes it, returns it in every error body, and forwards it to fraud-service, which logs it
+  too. The UI shows it on errors as a *Reference* for support. One ID finds a request in every service's logs.
+- **Logs**: readable text locally; JSON (ECS) in containers (`SPRING_PROFILES_ACTIVE=json-logs`, `FRAUD_LOG_FORMAT=json`).
+  Code never logs PHI by design, and a masking layer (member IDs, SSNs, dates of birth) catches anything that slips through.
+- **Metrics**: Actuator/Micrometer: adjudication outcomes, outbox publish counts, circuit-breaker state, plus JVM/HTTP.
+
 ## claims-service API (v1)
 
 | Method | Path | Notes |
@@ -77,14 +103,14 @@ Every error is an RFC 7807 `application/problem+json` body: `400` validation (wi
 `errors` list), `404` not found, `409` concurrent modification, `422` business rule (with a stable `code`).
 
 ```bash
-curl -i -X POST localhost:8080/api/v1/claims -H 'Content-Type: application/json' -d '{
+curl -i -X POST localhost:8080/api/v1/claims -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{
   "memberId": "AET100000001",
   "providerNpi": "1234567893",
   "serviceDate": "2026-11-01",
   "lines": [{ "procedureCode": "99213", "diagnosisCode": "J45.909", "units": 1, "billedAmount": 125.50 }]
 }'
 
-curl 'localhost:8080/api/v1/claims?memberId=AET100000001&status=SUBMITTED'
+curl -H "Authorization: Bearer $TOKEN" 'localhost:8080/api/v1/claims?memberId=AET100000001&status=SUBMITTED'
 ```
 
 ### Seed data (synthetic, no real PHI)

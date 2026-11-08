@@ -1,18 +1,16 @@
 """Application factory and entrypoint."""
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from pymongo import AsyncMongoClient
 
-from fraud_service.api import router
+from fraud_service.api import router, scoring
 from fraud_service.config import Settings, get_settings
+from fraud_service.observability import CorrelationIdMiddleware, configure_logging
 from fraud_service.repository import MongoScoreRepository, ScoreRepository
 from fraud_service.service import ScoringService
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 
 
 def create_app(settings: Settings | None = None, repository: ScoreRepository | None = None) -> FastAPI:
@@ -42,7 +40,10 @@ def create_app(settings: Settings | None = None, repository: ScoreRepository | N
         description="Explainable fraud/anomaly risk scoring for healthcare claims.",
         lifespan=lifespan,
     )
+    app.state.settings = settings
+    app.add_middleware(CorrelationIdMiddleware)
     app.include_router(router)
+    app.include_router(scoring)
     return app
 
 
@@ -50,4 +51,11 @@ def run() -> None:
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("fraud_service.main:create_app", factory=True, host=settings.host, port=settings.port)
+    configure_logging(settings.log_format)  # process-wide, so done at the entry point rather than per app
+    uvicorn.run(
+        "fraud_service.main:create_app",
+        factory=True,
+        host=settings.host,
+        port=settings.port,
+        log_config=None,  # keep our handlers (JSON/text + correlation ID)
+    )

@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.claims.api.dto.ClaimResponse;
+import com.example.claims.api.error.ProblemDetailWriter;
+import com.example.claims.security.SecurityConfig;
 import com.example.claims.api.dto.SubmitClaimRequest;
 import com.example.claims.api.dto.UpdateStatusRequest;
 import com.example.claims.domain.Claim;
@@ -29,12 +31,16 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Web-layer slice: request binding, validation and error shapes. The service is mocked. */
 @WebMvcTest(ClaimController.class)
+@Import({SecurityConfig.class, ProblemDetailWriter.class})
+@WithMockUser(username = "adjudicator", roles = "ADJUDICATOR")
 class ClaimControllerTest {
 
     @Autowired
@@ -146,6 +152,15 @@ class ClaimControllerTest {
                 .andExpect(jsonPath("$.type").value(endsWith("/invalid-status-transition")))
                 .andExpect(jsonPath("$.currentStatus").value("APPROVED"))
                 .andExpect(jsonPath("$.allowedTransitions[0]").value("PAID"));
+    }
+
+    @Test
+    @WithMockUser(username = "submitter", roles = "SUBMITTER")
+    void submitterCannotChangeStatus() throws Exception {
+        mvc.perform(patch("/api/v1/claims/CLM-1/status").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PAID\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type").value(endsWith("/forbidden")));
     }
 
     @Test

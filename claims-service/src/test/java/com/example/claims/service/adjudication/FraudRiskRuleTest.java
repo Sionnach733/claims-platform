@@ -21,7 +21,7 @@ class FraudRiskRuleTest {
     private final FraudRiskRule rule = new FraudRiskRule(new FraudServiceProperties(URI.create("http://x"),
             Duration.ofSeconds(1), Duration.ofSeconds(1), 70,
             new FraudServiceProperties.Retry(1, Duration.ZERO),
-            new FraudServiceProperties.CircuitBreaker(50, 10, 5, Duration.ofSeconds(1), 1)));
+            new FraudServiceProperties.CircuitBreaker(50, 10, 5, Duration.ofSeconds(1), 1), "test-api-key"));
 
     @ParameterizedTest
     @CsvSource({"0, false", "69, false", "70, true", "100, true"})

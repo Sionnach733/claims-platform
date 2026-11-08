@@ -2,9 +2,11 @@ import { QueryClient } from "@tanstack/react-query";
 import type { RouteObject } from "react-router";
 import { Link } from "react-router";
 import { ApiError } from "./api/client";
+import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
 import { ClaimDetailPage } from "./pages/ClaimDetailPage";
 import { ClaimsListPage } from "./pages/ClaimsListPage";
+import { LoginPage } from "./pages/LoginPage";
 import { SubmitClaimPage } from "./pages/SubmitClaimPage";
 
 function NotFound() {
@@ -20,10 +22,16 @@ export const routes: RouteObject[] = [
   {
     element: <Layout />,
     children: [
-      { index: true, element: <ClaimsListPage /> },
-      { path: "claims/new", element: <SubmitClaimPage /> },
-      { path: "claims/:claimNumber", element: <ClaimDetailPage /> },
-      { path: "*", element: <NotFound /> },
+      { path: "login", element: <LoginPage /> },
+      {
+        element: <RequireAuth />,
+        children: [
+          { index: true, element: <ClaimsListPage /> },
+          { path: "claims/new", element: <SubmitClaimPage /> },
+          { path: "claims/:claimNumber", element: <ClaimDetailPage /> },
+          { path: "*", element: <NotFound /> },
+        ],
+      },
     ],
   },
 ];

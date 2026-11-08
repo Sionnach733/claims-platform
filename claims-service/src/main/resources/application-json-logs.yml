@@ -1,0 +1,6 @@
+# Production-style logs: one JSON object per line (Elastic Common Schema), MDC (correlationId) included,
+# PHI masked by PhiMaskingLogCustomizer. Activate with SPRING_PROFILES_ACTIVE=json-logs (set in containers).
+logging:
+  structured:
+    format:
+      console: ecs

@@ -3,9 +3,22 @@ import { render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { routes } from "../App";
+import { setSession, type Role } from "../auth/session";
 
-/** Renders the real app routes at `path`, with a fresh query cache and no retries. */
-export function renderApp(path: string) {
+export const TEST_TOKEN = "test-token";
+
+/**
+ * Renders the real app routes at `path`, with a fresh query cache and no retries.
+ * Signed in as an adjudicator unless `as` says otherwise (`null` = signed out).
+ */
+export function renderApp(
+  path: string,
+  { as = "adjudicator" }: { as?: "adjudicator" | "submitter" | null } = {},
+) {
+  if (as) {
+    const roles: Role[] = [as === "adjudicator" ? "ADJUDICATOR" : "SUBMITTER"];
+    setSession({ token: TEST_TOKEN, username: as, roles, expiresAt: Date.now() + 3_600_000 });
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

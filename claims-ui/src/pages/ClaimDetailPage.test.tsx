@@ -95,6 +95,13 @@ describe("ClaimDetailPage", () => {
     expect(alert).toHaveTextContent("Allowed from PAID: none (final status)");
   });
 
+  it("does not offer adjudication actions to a submitter", async () => {
+    renderApp(URL, { as: "submitter" });
+
+    expect(await screen.findByText("Adjudication actions require the Adjudicator role.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adjudicate" })).not.toBeInTheDocument();
+  });
+
   it("shows a not-found message for an unknown claim", async () => {
     server.use(
       http.get("/api/v1/claims/:n", () =>

@@ -48,7 +48,7 @@ class HttpFraudClientTest {
         var props = new FraudServiceProperties(URI.create(wm.baseUrl()), Duration.ofMillis(300),
                 Duration.ofMillis(300), 70,
                 new FraudServiceProperties.Retry(2, Duration.ofMillis(10)),
-                new FraudServiceProperties.CircuitBreaker(50, 4, 4, Duration.ofMinutes(1), 1));
+                new FraudServiceProperties.CircuitBreaker(50, 4, 4, Duration.ofMinutes(1), 1), "test-api-key");
         var meters = new SimpleMeterRegistry();
         var config = new FraudClientConfig();
         breakers = config.circuitBreakerRegistry(meters);
@@ -133,7 +133,7 @@ class HttpFraudClientTest {
     void connectionRefusedDegradesToUnavailable() {
         var props = new FraudServiceProperties(URI.create("http://localhost:1"), Duration.ofMillis(200),
                 Duration.ofMillis(200), 70, new FraudServiceProperties.Retry(1, Duration.ofMillis(1)),
-                new FraudServiceProperties.CircuitBreaker(50, 4, 4, Duration.ofMinutes(1), 1));
+                new FraudServiceProperties.CircuitBreaker(50, 4, 4, Duration.ofMinutes(1), 1), "test-api-key");
         var meters = new SimpleMeterRegistry();
         var config = new FraudClientConfig();
         FraudClient unreachable = config.fraudClient(RestClient.builder(), props,

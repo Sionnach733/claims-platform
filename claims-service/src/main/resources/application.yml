@@ -23,6 +23,19 @@ spring:
 server:
   port: ${PORT:8080}
 
+logging:
+  pattern:
+    correlation: "[%X{correlationId:-}] "     # text logs: request ID on every line
+  structured:
+    json:
+      customizer: com.example.claims.observability.PhiMaskingLogCustomizer   # applies to JSON (ECS) logs
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+  default-produces-media-type: application/json
+
 management:
   endpoints:
     web:
@@ -48,6 +61,7 @@ app:
       minimum-number-of-calls: 5
       wait-duration-in-open-state: 10s
       permitted-calls-in-half-open-state: 2
+    api-key: ${FRAUD_API_KEY:local-dev-fraud-key}
   adjudication:
     in-network-rate: 0.80
     out-of-network-rate: 0.50
@@ -57,6 +71,19 @@ app:
     queue-name: ${CLAIM_EVENTS_QUEUE_NAME:claim-status-events}
     batch-size: 10            # SQS max per batch; also bounds how long outbox row locks are held
     poll-interval: 2s
+  security:
+    jwt:
+      secret: ${JWT_SECRET:local-dev-only-hmac-secret-change-me-0123456789}   # >= 32 bytes
+      issuer: claims-service
+      ttl: 1h
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:}   # empty: UI is same-origin via proxy
+    users:   # demo only: real deployments use an identity provider
+      - username: submitter
+        password: ${DEMO_SUBMITTER_PASSWORD:submitter-pass}
+        roles: [SUBMITTER]
+      - username: adjudicator
+        password: ${DEMO_ADJUDICATOR_PASSWORD:adjudicator-pass}
+        roles: [ADJUDICATOR]
   aws:
     region: ${AWS_REGION:eu-west-1}
     endpoint: ${AWS_SQS_ENDPOINT:http://localhost:4566}   # LocalStack; set AWS_SQS_ENDPOINT= (empty) in real AWS

@@ -21,6 +21,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -33,6 +34,7 @@ import software.amazon.awssdk.services.sqs.model.Message;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@WithMockUser(username = "adjudicator", roles = "ADJUDICATOR")
 @Import(TestcontainersConfiguration.class)
 class AdjudicationIntegrationTest {
 

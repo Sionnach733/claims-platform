@@ -3,6 +3,7 @@ package com.example.claims.fraud;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.net.URI;
 import java.time.Duration;
@@ -12,6 +13,9 @@ import org.springframework.validation.annotation.Validated;
 /**
  * Settings for calling fraud-service. Timeouts are deliberately tight: adjudication must stay fast,
  * and a slow fraud check degrades to manual review rather than blocking the caller.
+ *
+ * <p>{@code apiKey} authenticates this service to fraud-service (sent as {@code X-API-Key}); in AWS it comes
+ * from Secrets Manager, or is replaced by IAM/mTLS service-to-service auth.
  */
 @Validated
 @ConfigurationProperties("app.fraud-service")
@@ -21,7 +25,8 @@ public record FraudServiceProperties(
         @NotNull Duration readTimeout,
         @Min(0) @Max(100) int reviewThreshold,
         @Valid @NotNull Retry retry,
-        @Valid @NotNull CircuitBreaker circuitBreaker) {
+        @Valid @NotNull CircuitBreaker circuitBreaker,
+        @NotBlank String apiKey) {
 
     public record Retry(@Min(1) @Max(5) int maxAttempts, @NotNull Duration backoff) {
     }

@@ -38,7 +38,16 @@ async function submitClaim(
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 
+async function signIn(page: Page, username: "adjudicator" | "submitter") {
+  await page.goto("/login");
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(`${username}-pass`);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+}
+
 test("a routine claim is submitted, auto-approved at the in-network rate, and paid", async ({ page }) => {
+  await signIn(page, "adjudicator");
   const { claimNumber, member } = await submitClaim(page, {
     cpt: "99213",
     icd: "J45.909",
@@ -68,6 +77,7 @@ test("a routine claim is submitted, auto-approved at the in-network rate, and pa
 test("a suspicious claim is routed to manual review by the fraud score, then denied with notes", async ({
   page,
 }) => {
+  await signIn(page, "adjudicator");
   // Knee replacement billed with an asthma diagnosis and 12 units: fraud-service scores this ~60 (MEDIUM),
   // which is at or above the review threshold of 50.
   await submitClaim(page, { cpt: "27447", icd: "J45.909", units: "12", amount: "4900.00" });
@@ -88,10 +98,36 @@ test("a suspicious claim is routed to manual review by the fraud score, then den
 });
 
 test("invalid input is caught in the browser before reaching the API", async ({ page }) => {
+  await signIn(page, "submitter");
   await page.goto("/claims/new");
   await page.getByLabel("Provider NPI").fill("1234567890");
   await page.getByRole("button", { name: "Submit claim" }).click();
 
   await expect(page.getByText("Not a valid 10-digit NPI")).toBeVisible();
   await expect(page).toHaveURL(/\/claims\/new$/);
+});
+
+test("a submitter can submit but not adjudicate, and the API enforces it too", async ({ page, request }) => {
+  await signIn(page, "submitter");
+  const { claimNumber } = await submitClaim(page, { cpt: "99213", icd: "I10", units: "1", amount: "90.00" });
+
+  await expect(page.getByText("Adjudication actions require the Adjudicator role.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Adjudicate" })).toHaveCount(0);
+
+  // Hidden buttons are UX, not security: call the API directly with the submitter's token.
+  const token = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem("claims.session")!).token as string,
+  );
+  const res = await request.post(`/api/v1/claims/${claimNumber}/adjudicate`, {
+    headers: { Authorization: `Bearer ${token}`, "X-Correlation-Id": "e2e-forbidden-check-01" },
+  });
+  expect(res.status()).toBe(403);
+  expect(res.headers()["x-correlation-id"]).toBe("e2e-forbidden-check-01");
+  expect((await res.json()).title).toBe("Forbidden");
+});
+
+test("signed-out users are sent to sign in", async ({ page }) => {
+  await page.goto("/claims/new");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
