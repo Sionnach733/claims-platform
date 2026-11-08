@@ -12,7 +12,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
 |---|---|---|
 | `claims-service/` | Java 21 + Spring Boot 4 claims API (PostgreSQL, Flyway, SQS) | submit, search, adjudicate, events |
 | `fraud-service/` | Python 3.13 + FastAPI risk scoring (MongoDB) | scoring, history, health |
-| `claims-ui/` | React + TypeScript UI | phase 5 |
+| `claims-ui/` | React 19 + TypeScript claims workbench (Vite) | list, submit, detail, actions |
 | `infra/` | LocalStack init scripts, Terraform for AWS | partial |
 | `docs/adr/` | Architecture Decision Records | phase 7 |
 
@@ -21,6 +21,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for the full scope.
 - Docker
 - JDK 21 (`brew install openjdk@21`, then `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`)
 - [uv](https://docs.astral.sh/uv/) for the Python service (`brew install uv`)
+- Node.js 22+ for the UI
 
 ## Run locally
 
@@ -30,6 +31,7 @@ docker compose ps                    # all three should be "healthy"
 
 (cd fraud-service && uv run fraud-service)   # http://localhost:8000/docs (Swagger UI)
 (cd claims-service && ./mvnw spring-boot:run) # http://localhost:8080/actuator/health
+(cd claims-ui && npm install && npm run dev)  # http://localhost:5173 (proxies /api to :8080)
 ```
 
 Or start the service with throwaway Testcontainers databases, so you don't need Compose:
@@ -43,7 +45,21 @@ cd claims-service && ./mvnw spring-boot:test-run
 ```bash
 cd claims-service && ./mvnw verify                 # JUnit + Testcontainers (Postgres, LocalStack) + WireMock
 cd fraud-service  && uv run ruff check . && uv run pytest   # pytest + Testcontainers (MongoDB)
+cd claims-ui      && npm run lint && npm run typecheck && npm run test:coverage  # Vitest + RTL + MSW
+cd claims-ui      && npx playwright install chromium && npm run e2e  # Playwright against the running stack
 ```
+
+## claims-ui
+
+| Page | What it does |
+|---|---|
+| `/` | Search claims by member, status and service-date range; filters live in the URL (shareable) |
+| `/claims/new` | Multi-line claim form; zod validation mirrors the server rules (incl. NPI Luhn check); server field errors map back onto inputs |
+| `/claims/:claimNumber` | Summary, fraud-risk badge, lines, status timeline, and only the actions the current status allows |
+
+TanStack Query owns server state (cache, retries on 5xx only, invalidation after writes). Component tests
+run the real routes against an MSW mock API; Playwright runs the full journey against the real services,
+including a suspicious claim that the live fraud-service routes to manual review.
 
 ## claims-service API (v1)
 
@@ -98,7 +114,7 @@ otherwise the claim is **approved** and priced (in-network 80%, out-of-network 5
 | 10 | `MemberEligibilityRule` | deny `COVERAGE_INACTIVE` if not covered on the service date |
 | 20 | `KnownProviderRule` | deny `PROVIDER_UNKNOWN` if the NPI isn't registered |
 | 30 | `DuplicateClaimRule` | deny `DUPLICATE_CLAIM` if an earlier claim bills the same member/provider/date/CPT |
-| 90 | `FraudRiskRule` | review if fraud-service score ≥ 70, **or if screening is unavailable** |
+| 90 | `FraudRiskRule` | review if fraud-service score ≥ 50, **or if screening is unavailable** |
 | 100 | `HighValueReviewRule` | review if billed ≥ `app.adjudication.manual-review-threshold` (5000) |
 
 Add a rule by adding a `@Component` that implements `AdjudicationRule`: nothing else changes.

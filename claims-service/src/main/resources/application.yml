@@ -38,7 +38,7 @@ app:
     base-url: ${FRAUD_SERVICE_URL:http://localhost:8000}
     connect-timeout: 500ms
     read-timeout: 1500ms
-    review-threshold: 70          # score >= this routes the claim to manual review
+    review-threshold: 50          # score >= this (MEDIUM-high and HIGH) routes the claim to manual review
     retry:
       max-attempts: 2             # 1 retry: absorbs a blip without doubling worst-case latency much
       backoff: 100ms
