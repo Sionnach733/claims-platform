@@ -1,0 +1,52 @@
+# Local infrastructure for the Claims Platform showcase.
+# Phase 1: backing services only (Postgres ≈ Aurora PostgreSQL, Mongo, LocalStack SQS).
+# Application services are added in later phases.
+name: claims-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: claims
+      POSTGRES_USER: claims
+      POSTGRES_PASSWORD: claims
+    ports:
+      - "5433:5432"   # 5433 on the host: avoids clashing with a locally installed Postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claims -d claims"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:7.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: eu-west-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./infra/localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name claim-status-events >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:
+  mongo-data:

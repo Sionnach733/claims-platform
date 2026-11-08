@@ -1,0 +1,35 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Java
+target/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Secrets
+.env
+.env.*
+!.env.example
