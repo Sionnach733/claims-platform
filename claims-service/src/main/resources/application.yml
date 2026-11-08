@@ -12,6 +12,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    web:
+      pageable:
+        max-page-size: 100   # cap ?size= so one request can't pull the whole table
+  mvc:
+    problemdetails:
+      enabled: true
 
 server:
   port: ${PORT:8080}
