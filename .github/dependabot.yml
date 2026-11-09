@@ -1,5 +1,8 @@
 # Weekly dependency updates. Minor/patch bumps are grouped into one PR per ecosystem to keep the noise down;
 # majors arrive individually so they get proper review.
+# Runtimes (Java 21, Python 3.13, Node 22) are LTS lines chosen on purpose: moving them is a deliberate
+# change across Dockerfiles, CI and the code, so Dependabot only patches within them. The same goes for
+# TypeScript, held on 6.x until typescript-eslint supports 7.
 version: 2
 updates:
   - package-ecosystem: maven
@@ -19,10 +22,22 @@ updates:
     schedule: { interval: weekly }
     groups:
       minor-and-patch: { update-types: [minor, patch] }
+    ignore:
+      - dependency-name: typescript
+        versions: [">=7"]
+      - dependency-name: "@types/node"
+        versions: [">=23"]
 
   - package-ecosystem: docker
     directories: [/claims-service, /fraud-service, /claims-ui]
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: eclipse-temurin
+        versions: [">=22"]
+      - dependency-name: python
+        versions: [">=3.14"]
+      - dependency-name: node
+        versions: [">=23"]
 
   - package-ecosystem: github-actions
     directory: /
