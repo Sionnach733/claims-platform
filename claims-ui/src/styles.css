@@ -424,7 +424,7 @@ th {
 }
 .line-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.6fr 1fr auto;
+  grid-template-columns: 1.6fr 1.6fr 0.6fr 1fr auto;
   gap: 0.75rem;
   align-items: start;
   padding: 0.5rem 0;
@@ -443,7 +443,8 @@ th {
 .field label {
   display: block;
 }
-.field.has-error input {
+.field.has-error input,
+.field.has-error select {
   border-color: var(--danger);
 }
 .field-error {
@@ -485,4 +486,16 @@ th {
 .reference {
   font-size: 0.8rem;
   opacity: 0.85;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.code-description {
+  display: block;
+  font-size: 0.85rem;
+}
+.line-row .field {
+  min-width: 0; /* let long option text truncate instead of stretching the grid */
 }

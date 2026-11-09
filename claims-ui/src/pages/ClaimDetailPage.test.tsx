@@ -18,7 +18,10 @@ describe("ClaimDetailPage", () => {
 
     expect(await screen.findByRole("heading", { name: /CLM-2026-00000001/ })).toBeInTheDocument();
     expect(screen.getByText("Not scored")).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "99213" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: /^99213/ })).toHaveTextContent(
+      "Office visit, established patient, low complexity",
+    );
+    expect(screen.getByRole("cell", { name: /^J45\.909/ })).toHaveTextContent("Asthma, uncomplicated");
     expect(
       within(screen.getByRole("list", { name: "Status history" })).getByText("Claim submitted"),
     ).toBeVisible();

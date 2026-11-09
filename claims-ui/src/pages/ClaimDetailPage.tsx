@@ -7,6 +7,7 @@ import { ProblemAlert } from "../components/ProblemAlert";
 import { RiskBadge } from "../components/RiskBadge";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatDate, formatDateTime, formatMoney, humanStatus } from "../lib/format";
+import { describeCpt, describeIcd } from "../lib/medicalCodes";
 
 export function ClaimDetailPage() {
   const { claimNumber = "" } = useParams();
@@ -95,8 +96,12 @@ export function ClaimDetailPage() {
             {claim.lines.map((l) => (
               <tr key={l.lineNumber}>
                 <td>{l.lineNumber}</td>
-                <td>{l.procedureCode}</td>
-                <td>{l.diagnosisCode}</td>
+                <td>
+                  <CodeCell code={l.procedureCode} description={describeCpt(l.procedureCode)} />
+                </td>
+                <td>
+                  <CodeCell code={l.diagnosisCode} description={describeIcd(l.diagnosisCode)} />
+                </td>
                 <td className="num">{l.units}</td>
                 <td className="num">{formatMoney(l.billedAmount)}</td>
               </tr>
@@ -190,5 +195,14 @@ function ClaimActions({ claim }: { claim: Claim }) {
 
       <ProblemAlert error={error} title="That action failed" />
     </div>
+  );
+}
+
+function CodeCell({ code, description }: { code: string; description?: string }) {
+  return (
+    <>
+      <span className="code">{code}</span>
+      {description && <span className="code-description muted">{description}</span>}
+    </>
   );
 }

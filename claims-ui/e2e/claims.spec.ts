@@ -24,8 +24,8 @@ async function submitClaim(
   await page.getByLabel("Member ID").fill(member);
   await page.getByLabel("Provider NPI").fill(IN_NETWORK_NPI);
   await page.getByLabel("Date of service").fill(serviceDate);
-  await page.getByLabel("CPT code (line 1)").fill(line.cpt);
-  await page.getByLabel("Diagnosis (line 1)").fill(line.icd);
+  await page.getByLabel("CPT code (line 1)").selectOption(line.cpt);
+  await page.getByLabel("Diagnosis (line 1)").selectOption(line.icd);
   await page.getByLabel("Units (line 1)").fill(line.units);
   await page.getByLabel("Billed amount (line 1)").fill(line.amount);
   await page.getByRole("button", { name: "Submit claim" }).click();

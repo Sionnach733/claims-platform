@@ -1,6 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ReactNode } from "react";
-import { useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
+import {
+  useFieldArray,
+  useForm,
+  useWatch,
+  type FieldPath,
+  type UseFormRegisterReturn,
+} from "react-hook-form";
 import { useNavigate } from "react-router";
 import { ApiError } from "../api/client";
 import { useProviders, useSubmitClaim } from "../api/hooks";
@@ -14,6 +20,17 @@ import {
   type ClaimFormValues,
 } from "../lib/claimForm";
 import { formatMoney } from "../lib/format";
+import {
+  CPT_CODES,
+  describeCpt,
+  describeIcd,
+  groupCodes,
+  ICD10_CODES,
+  type MedicalCode,
+} from "../lib/medicalCodes";
+
+const CPT_GROUPS = groupCodes(CPT_CODES);
+const ICD10_GROUPS = groupCodes(ICD10_CODES);
 
 /** Server field paths ("lines[0].units") → react-hook-form paths ("lines.0.units"). */
 const toFormPath = (field: string) => field.replace(/\[(\d+)\]/g, ".$1") as FieldPath<ClaimFormInput>;
@@ -84,10 +101,22 @@ export function SubmitClaimPage() {
             return (
               <div className="line-row" key={field.id} role="group" aria-label={`Line ${n}`}>
                 <Field label={`CPT code (line ${n})`} error={e?.procedureCode?.message} id={`cpt-${i}`}>
-                  <input id={`cpt-${i}`} placeholder="99213" {...register(`lines.${i}.procedureCode`)} />
+                  <CodeSelect
+                    id={`cpt-${i}`}
+                    groups={CPT_GROUPS}
+                    placeholder="Select a procedure…"
+                    hint={describeCpt(lines?.[i]?.procedureCode ?? "")}
+                    {...register(`lines.${i}.procedureCode`)}
+                  />
                 </Field>
                 <Field label={`Diagnosis (line ${n})`} error={e?.diagnosisCode?.message} id={`icd-${i}`}>
-                  <input id={`icd-${i}`} placeholder="J45.909" {...register(`lines.${i}.diagnosisCode`)} />
+                  <CodeSelect
+                    id={`icd-${i}`}
+                    groups={ICD10_GROUPS}
+                    placeholder="Select a diagnosis…"
+                    hint={describeIcd(lines?.[i]?.diagnosisCode ?? "")}
+                    {...register(`lines.${i}.diagnosisCode`)}
+                  />
                 </Field>
                 <Field label={`Units (line ${n})`} error={e?.units?.message} id={`units-${i}`}>
                   <input id={`units-${i}`} inputMode="numeric" {...register(`lines.${i}.units`)} />
@@ -140,6 +169,43 @@ export function SubmitClaimPage() {
         </div>
       </form>
     </section>
+  );
+}
+
+/** A grouped code picker; the selected code's full description is shown underneath, since narrow
+ * columns truncate the option text. */
+function CodeSelect({
+  id,
+  groups,
+  placeholder,
+  hint,
+  ...field
+}: {
+  id: string;
+  groups: [string, MedicalCode[]][];
+  placeholder: string;
+  hint?: string;
+} & UseFormRegisterReturn) {
+  return (
+    <>
+      <select id={id} aria-describedby={hint ? `${id}-hint` : undefined} {...field}>
+        <option value="">{placeholder}</option>
+        {groups.map(([group, codes]) => (
+          <optgroup key={group} label={group}>
+            {codes.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} · {c.description}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {hint && (
+        <span className="hint" id={`${id}-hint`}>
+          {hint}
+        </span>
+      )}
+    </>
   );
 }
 

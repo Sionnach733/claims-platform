@@ -15,12 +15,8 @@ export function todayIso(now: Date = new Date()): string {
 }
 
 const lineSchema = z.object({
-  procedureCode: z.string().trim().regex(CPT_PATTERN, { error: "Enter a 5-character CPT code, e.g. 99213" }),
-  diagnosisCode: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(ICD10_PATTERN, { error: "Enter an ICD-10 code, e.g. J45.909" }),
+  procedureCode: z.string().trim().regex(CPT_PATTERN, { error: "Choose a procedure" }),
+  diagnosisCode: z.string().trim().toUpperCase().regex(ICD10_PATTERN, { error: "Choose a diagnosis" }),
   units: z
     .string()
     .regex(/^\d+$/, { error: "Whole number" })
