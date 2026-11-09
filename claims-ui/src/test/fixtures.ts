@@ -1,4 +1,23 @@
-import type { Claim, ClaimSummary, Page, Provider } from "../api/types";
+import type { Claim, ClaimSummary, Member, Page, Provider } from "../api/types";
+
+export const members: Member[] = [
+  {
+    memberId: "AET100000001",
+    firstName: "Aoife",
+    lastName: "Murphy",
+    planCode: "PPO-GOLD",
+    coverageStart: "2024-01-01",
+    coverageEnd: null,
+  },
+  {
+    memberId: "AET100000004",
+    firstName: "Declan",
+    lastName: "Kelly",
+    planCode: "HMO-BRONZE",
+    coverageStart: "2022-01-01",
+    coverageEnd: "2024-12-31",
+  },
+];
 
 export const providers: Provider[] = [
   { npi: "1234567893", name: "Galway Family Practice", specialty: "Family Medicine", inNetwork: true },

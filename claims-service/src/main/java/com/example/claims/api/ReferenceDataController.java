@@ -1,6 +1,7 @@
 package com.example.claims.api;
 
 import com.example.claims.api.dto.MemberResponse;
+import com.example.claims.api.dto.MemberSummaryResponse;
 import com.example.claims.api.dto.ProviderResponse;
 import com.example.claims.service.ReferenceDataService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +22,12 @@ public class ReferenceDataController {
 
     public ReferenceDataController(ReferenceDataService referenceData) {
         this.referenceData = referenceData;
+    }
+
+    /** All members, for the demo's member picker. A real member base would be a paginated search. */
+    @GetMapping("/members")
+    public List<MemberSummaryResponse> members() {
+        return referenceData.members().stream().map(MemberSummaryResponse::from).toList();
     }
 
     @GetMapping("/members/{memberId}")

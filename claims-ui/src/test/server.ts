@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { makeClaim, pageOf, providers, summaryOf } from "./fixtures";
+import { makeClaim, members, pageOf, providers, summaryOf } from "./fixtures";
 
 /** Default happy-path API. Individual tests override handlers with server.use(...). */
 export const handlers = [
@@ -17,6 +17,7 @@ export const handlers = [
       roles: [username.toUpperCase()],
     });
   }),
+  http.get("/api/v1/members", () => HttpResponse.json(members)),
   http.get("/api/v1/providers", () => HttpResponse.json(providers)),
   http.get("/api/v1/claims", () => HttpResponse.json(pageOf([summaryOf(makeClaim())]))),
   http.get("/api/v1/claims/:claimNumber", ({ params }) =>

@@ -4,6 +4,7 @@ import type {
   ClaimSearch,
   ClaimStatus,
   ClaimSummary,
+  Member,
   Page,
   ProblemDetail,
   Provider,
@@ -95,5 +96,6 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status, reason: reason || undefined }),
     }),
+  members: () => request<Member[]>("/members"),
   providers: () => request<Provider[]>("/providers"),
 };

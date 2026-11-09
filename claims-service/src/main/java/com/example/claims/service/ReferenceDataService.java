@@ -30,6 +30,10 @@ public class ReferenceDataService {
         return providers.findByNpi(npi).orElseThrow(() -> new ResourceNotFoundException("Provider", npi));
     }
 
+    public List<Member> members() {
+        return members.findAll(Sort.by("memberId"));
+    }
+
     public List<Provider> providers() {
         return providers.findAll(Sort.by("name"));
     }

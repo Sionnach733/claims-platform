@@ -21,7 +21,7 @@ async function submitClaim(
 ): Promise<{ claimNumber: string; member: string }> {
   const { member, serviceDate } = uniqueClaimKey();
   await page.goto("/claims/new");
-  await page.getByLabel("Member ID").fill(member);
+  await page.getByLabel("Member ID").selectOption(member);
   await page.getByLabel("Provider NPI").fill(IN_NETWORK_NPI);
   await page.getByLabel("Date of service").fill(serviceDate);
   await page.getByLabel("CPT code (line 1)").selectOption(line.cpt);

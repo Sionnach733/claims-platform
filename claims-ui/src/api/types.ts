@@ -54,6 +54,15 @@ export interface Page<T> {
   totalPages: number;
 }
 
+export interface Member {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  planCode: string;
+  coverageStart: string;
+  coverageEnd: string | null;
+}
+
 export interface Provider {
   npi: string;
   name: string;

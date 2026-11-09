@@ -5,6 +5,7 @@ import type { Claim, ClaimSearch, ClaimStatus, SubmitClaimRequest } from "./type
 export const queryKeys = {
   claims: (params: ClaimSearch) => ["claims", params] as const,
   claim: (claimNumber: string) => ["claim", claimNumber] as const,
+  members: ["members"] as const,
   providers: ["providers"] as const,
 };
 
@@ -18,6 +19,10 @@ export function useClaims(params: ClaimSearch) {
 
 export function useClaim(claimNumber: string) {
   return useQuery({ queryKey: queryKeys.claim(claimNumber), queryFn: () => api.getClaim(claimNumber) });
+}
+
+export function useMembers() {
+  return useQuery({ queryKey: queryKeys.members, queryFn: api.members, staleTime: 5 * 60_000 });
 }
 
 export function useProviders() {

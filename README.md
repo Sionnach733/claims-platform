@@ -152,7 +152,7 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/claims
 | `GET` | `/api/v1/claims?memberId=&status=&from=&to=&page=&size=&sort=` | Paginated search (summary rows, max `size` 100) |
 | `POST` | `/api/v1/claims/{claimNumber}/adjudicate` | Run the rules engine → `APPROVED` / `DENIED` / `IN_REVIEW` |
 | `PATCH` | `/api/v1/claims/{claimNumber}/status` | Manual transition `{ "status": "PAID", "reason": "..." }` |
-| `GET` | `/api/v1/members/{memberId}` | Seeded member |
+| `GET` | `/api/v1/members`, `/api/v1/members/{memberId}` | Seeded members (the list omits date of birth) |
 | `GET` | `/api/v1/providers`, `/api/v1/providers/{npi}` | Seeded providers |
 
 Every error is an RFC 7807 `application/problem+json` body: `400` validation (with a per-field

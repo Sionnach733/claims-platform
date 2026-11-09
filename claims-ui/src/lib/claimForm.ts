@@ -35,7 +35,7 @@ export const claimFormSchema = z.object({
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^AET\d{9}$/, { error: "Member ID looks like AET123456789" }),
+    .regex(/^AET\d{9}$/, { error: "Choose a member" }),
   providerNpi: z.string().trim().refine(isValidNpi, { error: "Not a valid 10-digit NPI" }),
   serviceDate: z
     .string()

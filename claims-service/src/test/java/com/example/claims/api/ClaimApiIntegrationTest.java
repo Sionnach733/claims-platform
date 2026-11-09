@@ -112,6 +112,12 @@ class ClaimApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.inNetwork").value(false));
 
+        mvc.perform(get("/api/v1/members"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(5))
+                .andExpect(jsonPath("$[0].memberId").value("AET100000001"))
+                .andExpect(jsonPath("$[0].dateOfBirth").doesNotExist());
+
         mvc.perform(get("/api/v1/members/AET100000004"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.coverageEnd").value("2024-12-31"));

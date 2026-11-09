@@ -9,7 +9,8 @@ import {
 } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { ApiError } from "../api/client";
-import { useProviders, useSubmitClaim } from "../api/hooks";
+import { useMembers, useProviders, useSubmitClaim } from "../api/hooks";
+import type { Member } from "../api/types";
 import { ProblemAlert } from "../components/ProblemAlert";
 import {
   claimFormSchema,
@@ -19,7 +20,7 @@ import {
   type ClaimFormInput,
   type ClaimFormValues,
 } from "../lib/claimForm";
-import { formatMoney } from "../lib/format";
+import { formatDate, formatMoney } from "../lib/format";
 import {
   CPT_CODES,
   describeCpt,
@@ -37,6 +38,7 @@ const toFormPath = (field: string) => field.replace(/\[(\d+)\]/g, ".$1") as Fiel
 
 export function SubmitClaimPage() {
   const navigate = useNavigate();
+  const members = useMembers();
   const providers = useProviders();
   const submit = useSubmitClaim();
 
@@ -52,6 +54,8 @@ export function SubmitClaimPage() {
   });
   const { fields, append, remove } = useFieldArray({ control, name: "lines" });
   const lines = useWatch({ control, name: "lines" });
+  const memberId = useWatch({ control, name: "memberId" });
+  const selectedMember = members.data?.find((m) => m.memberId === memberId);
   const total = (lines ?? []).reduce((sum, l) => sum + (Number(l?.billedAmount) || 0), 0);
 
   async function onSubmit(values: ClaimFormValues) {
@@ -74,7 +78,23 @@ export function SubmitClaimPage() {
           <legend>Claim</legend>
           <div className="grid-3">
             <Field label="Member ID" error={errors.memberId?.message} id="memberId">
-              <input id="memberId" placeholder="AET100000001" {...register("memberId")} />
+              <select
+                id="memberId"
+                aria-describedby={selectedMember ? "memberId-hint" : undefined}
+                {...register("memberId")}
+              >
+                <option value="">{members.isPending ? "Loading members…" : "Select a member…"}</option>
+                {members.data?.map((m) => (
+                  <option key={m.memberId} value={m.memberId}>
+                    {m.memberId} · {m.firstName} {m.lastName}
+                  </option>
+                ))}
+              </select>
+              {selectedMember && (
+                <span className="hint" id="memberId-hint">
+                  {coverageSummary(selectedMember)}
+                </span>
+              )}
             </Field>
             <Field label="Provider NPI" error={errors.providerNpi?.message} id="providerNpi">
               <input id="providerNpi" list="provider-list" inputMode="numeric" {...register("providerNpi")} />
@@ -170,6 +190,14 @@ export function SubmitClaimPage() {
       </form>
     </section>
   );
+}
+
+/** Plan and coverage window, so a lapsed member (who will be denied) is easy to spot when picking one. */
+function coverageSummary(m: Member): string {
+  const window = m.coverageEnd
+    ? `covered ${formatDate(m.coverageStart)} to ${formatDate(m.coverageEnd)}`
+    : `covered since ${formatDate(m.coverageStart)}`;
+  return `${m.planCode} plan, ${window}`;
 }
 
 /** A grouped code picker; the selected code's full description is shown underneath, since narrow

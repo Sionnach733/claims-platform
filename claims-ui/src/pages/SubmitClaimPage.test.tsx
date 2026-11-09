@@ -7,7 +7,10 @@ import { renderApp } from "../test/render";
 import { problem, server } from "../test/server";
 
 async function fillValidClaim(user: ReturnType<typeof renderApp>["user"]) {
-  await user.type(screen.getByLabelText("Member ID"), "AET100000001");
+  await user.selectOptions(
+    screen.getByLabelText("Member ID"),
+    await screen.findByRole("option", { name: /^AET100000001/ }),
+  );
   await user.type(screen.getByLabelText("Provider NPI"), "1234567893");
   await user.type(screen.getByLabelText("Date of service"), "2026-11-01");
   await user.selectOptions(screen.getByLabelText("CPT code (line 1)"), "99213");
@@ -16,6 +19,18 @@ async function fillValidClaim(user: ReturnType<typeof renderApp>["user"]) {
 }
 
 describe("SubmitClaimPage", () => {
+  it("lists members and shows the selected member's plan and coverage", async () => {
+    const { user } = renderApp("/claims/new");
+
+    const member = screen.getByLabelText("Member ID");
+    await user.selectOptions(
+      member,
+      await screen.findByRole("option", { name: "AET100000004 · Declan Kelly" }),
+    );
+
+    expect(member).toHaveAccessibleDescription(/HMO-BRONZE plan, covered .*2022 to .*2024/);
+  });
+
   it("offers grouped CPT and ICD-10 codes and explains the selected one", async () => {
     const { user } = renderApp("/claims/new");
 
@@ -43,7 +58,7 @@ describe("SubmitClaimPage", () => {
     await user.click(screen.getByRole("button", { name: "Submit claim" }));
 
     expect(await screen.findByText("Not a valid 10-digit NPI")).toBeInTheDocument();
-    expect(screen.getByText("Member ID looks like AET123456789")).toBeInTheDocument();
+    expect(screen.getByText("Choose a member")).toBeInTheDocument();
     expect(screen.getByText("Choose a procedure")).toBeInTheDocument();
     expect(called).toBe(false);
   });
