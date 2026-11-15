@@ -2,7 +2,7 @@
 # fraud-service: dependencies resolved from uv.lock (reproducible), installed into a venv in a build stage,
 # then only the venv is copied into a slim runtime image that runs as a non-root user.
 
-FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.8 AS uv
 
 FROM python:3.13-slim-bookworm AS build
 COPY --from=uv /uv /bin/uv
